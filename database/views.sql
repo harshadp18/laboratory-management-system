@@ -1,0 +1,2 @@
+-- PostgreSQL views will be added after the team approves their definitions.
+-- Suggested views: v_lab_workstation_status, v_open_complaints, v_booking_summary.

@@ -1,0 +1,9 @@
+<?php
+/** Copy this file to database.php and replace values with local PostgreSQL credentials. */
+return [
+    'host' => 'localhost',
+    'port' => '5432',
+    'database' => 'laboratory_management_db',
+    'username' => 'postgres',
+    'password' => 'CHANGE_THIS_PASSWORD',
+];

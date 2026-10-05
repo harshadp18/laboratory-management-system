@@ -1,0 +1,10 @@
+.env
+config/database.php
+config/database.local.php
+pgadmin4.db
+.vscode/
+.idea/
+*.log
+Thumbs.db
+Desktop.ini
+vendor/
