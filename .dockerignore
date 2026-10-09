@@ -1,0 +1,11 @@
+.git
+.vscode
+.idea
+.env
+.env.*
+config/database.php
+config/database.local.php
+pgadmin4.db
+*.log
+work
+vendor

@@ -6,6 +6,13 @@ $allTasks = getMaintenanceTasks();
 $scheduledTasks = array_filter($allTasks, fn($t) => $t['status'] === 'Scheduled');
 $inProgressTasks = array_filter($allTasks, fn($t) => $t['status'] === 'In Progress');
 $completedTasks = array_filter($allTasks, fn($t) => $t['status'] === 'Completed');
+$canManageMaintenance = $currentUser['role'] === 'Lab Assistant';
+$labs = getLaboratories();
+$workstationsByLab = [];
+foreach ($labs as $labId => $lab) {
+    $workstationsByLab[$labId] = getWorkstations($labId);
+}
+$complaints = getComplaints();
 ?>
 
 <div class="page-header" style="display: flex; align-items: flex-start; justify-content: space-between; flex-wrap: wrap; gap: 1rem;">
@@ -13,6 +20,7 @@ $completedTasks = array_filter($allTasks, fn($t) => $t['status'] === 'Completed'
         <h1 class="page-title">Maintenance logs</h1>
         <p class="page-subtitle">Schedule, track and complete workstation maintenance.</p>
     </div>
+    <?php if ($canManageMaintenance): ?>
     <div>
         <button class="btn btn-primary" type="button" onclick="document.getElementById('logMaintModal').classList.add('open')">
             <svg width="16" height="16" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -21,6 +29,7 @@ $completedTasks = array_filter($allTasks, fn($t) => $t['status'] === 'Completed'
             Log Maintenance
         </button>
     </div>
+    <?php endif; ?>
 </div>
 
 <!-- Filters Bar (Image 3) -->
@@ -97,6 +106,15 @@ $completedTasks = array_filter($allTasks, fn($t) => $t['status'] === 'Completed'
                     <div>
                         <?= $task['linked_complaint'] ? 'Linked complaint &middot; ' . htmlspecialchars($task['linked_complaint']) : 'No linked complaint &middot; Preventive task' ?>
                     </div>
+                    <?php if ($canManageMaintenance && !empty($task['maintenance_id'])): ?>
+                        <form method="post" class="maintenance-transition-form">
+                            <input type="hidden" name="csrf_token" value="<?= htmlspecialchars($_SESSION['csrf_token']) ?>">
+                            <input type="hidden" name="action" value="advance_maintenance">
+                            <input type="hidden" name="maintenance_id" value="<?= (int) $task['maintenance_id'] ?>">
+                            <input type="hidden" name="status" value="In Progress">
+                            <button class="btn btn-outline" type="submit">Start task</button>
+                        </form>
+                    <?php endif; ?>
                 </div>
             </article>
         <?php endforeach; ?>
@@ -146,6 +164,15 @@ $completedTasks = array_filter($allTasks, fn($t) => $t['status'] === 'Completed'
                     <div>
                         <?= $task['linked_complaint'] ? 'Linked complaint &middot; ' . htmlspecialchars($task['linked_complaint']) : 'No linked complaint &middot; Preventive task' ?>
                     </div>
+                    <?php if ($canManageMaintenance && !empty($task['maintenance_id'])): ?>
+                        <form method="post" class="maintenance-transition-form">
+                            <input type="hidden" name="csrf_token" value="<?= htmlspecialchars($_SESSION['csrf_token']) ?>">
+                            <input type="hidden" name="action" value="advance_maintenance">
+                            <input type="hidden" name="maintenance_id" value="<?= (int) $task['maintenance_id'] ?>">
+                            <input type="hidden" name="status" value="Completed">
+                            <button class="btn btn-outline" type="submit">Complete task</button>
+                        </form>
+                    <?php endif; ?>
                 </div>
             </article>
         <?php endforeach; ?>
@@ -207,7 +234,7 @@ $completedTasks = array_filter($allTasks, fn($t) => $t['status'] === 'Completed'
         <line x1="12" y1="16" x2="12" y2="12" stroke-width="2"/>
         <line x1="12" y1="8" x2="12.01" y2="8" stroke-width="2"/>
     </svg>
-    <span>Interaction specification (static): drag a Scheduled task into In Progress. The destination card receives a subtle pulse to indicate active work. These frames do not implement drag-and-drop or animation.</span>
+    <span>Use the Start task and Complete task actions to move maintenance through Scheduled, In Progress, and Completed.</span>
 </div>
 
 <!-- Log Maintenance Modal Dialog -->
@@ -223,41 +250,55 @@ $completedTasks = array_filter($allTasks, fn($t) => $t['status'] === 'Completed'
             <button class="btn btn-outline" style="padding: 0.35rem 0.65rem;" onclick="document.getElementById('logMaintModal').classList.remove('open')">&times;</button>
         </div>
 
-        <form style="display: flex; flex-direction: column; gap: 1rem; padding: 1.5rem; flex-grow: 1;" data-ajax-toast="Maintenance task logged and scheduled." onsubmit="document.getElementById('logMaintModal').classList.remove('open')">
+        <form method="post" style="display: flex; flex-direction: column; gap: 1rem; padding: 1.5rem; flex-grow: 1;">
+            <input type="hidden" name="csrf_token" value="<?= htmlspecialchars($_SESSION['csrf_token']) ?>">
+            <input type="hidden" name="action" value="create_maintenance">
             <div class="form-group">
-                <label class="form-label">Workstation *</label>
-                <select class="form-control" required>
-                    <option value="Lab A / WS-03">Lab A / WS-03 (Under Repair)</option>
-                    <option value="Lab A / WS-01">Lab A / WS-01</option>
-                    <option value="Lab B / WS-07">Lab B / WS-07</option>
-                    <option value="Lab C / WS-12">Lab C / WS-12</option>
+                <label class="form-label" for="maintenanceWorkstation">Workstation *</label>
+                <select class="form-control" id="maintenanceWorkstation" name="workstation" required>
+                    <?php foreach ($workstationsByLab as $labId => $workstations): ?>
+                        <?php foreach ($workstations as $workstation): ?>
+                            <?php $workstationNo = $workstation['workstation_no'] ?? substr($workstation['code'], strrpos($workstation['code'], ' - ') + 3); ?>
+                            <option value="<?= htmlspecialchars($labId . '|' . $workstationNo) ?>">
+                                <?= htmlspecialchars($workstation['code'] . ($workstation['status'] === 'Under Repair' ? ' (Under Repair)' : '')) ?>
+                            </option>
+                        <?php endforeach; ?>
+                    <?php endforeach; ?>
                 </select>
             </div>
 
             <div class="form-group">
-                <label class="form-label">Maintenance Type *</label>
-                <select class="form-control" required>
+                <label class="form-label" for="maintenanceType">Maintenance Type *</label>
+                <select class="form-control" id="maintenanceType" name="maintenance_type" required>
                     <option value="Corrective">Corrective Maintenance</option>
                     <option value="Preventive">Preventive Maintenance</option>
                 </select>
             </div>
 
             <div class="form-group">
-                <label class="form-label">Task Title *</label>
-                <input class="form-control" type="text" placeholder="e.g. Inspect display connection" required>
+                <label class="form-label" for="maintenanceStartTime">Scheduled date and time *</label>
+                <input class="form-control" id="maintenanceStartTime" name="start_time" type="datetime-local" min="<?= date('Y-m-d\TH:i') ?>" value="<?= date('Y-m-d\TH:i', strtotime('+1 hour')) ?>" required>
             </div>
 
             <div class="form-group">
-                <label class="form-label">Description / Instructions *</label>
-                <textarea class="form-control" rows="3" placeholder="Actionable work steps..." required></textarea>
+                <label class="form-label" for="maintenanceTitle">Task Title *</label>
+                <input class="form-control" id="maintenanceTitle" name="title" type="text" maxlength="200" placeholder="e.g. Inspect display connection" required>
             </div>
 
             <div class="form-group">
-                <label class="form-label">Linked Complaint (Optional)</label>
-                <select class="form-control">
+                <label class="form-label" for="maintenanceDescription">Description / Instructions *</label>
+                <textarea class="form-control" id="maintenanceDescription" name="description" rows="3" maxlength="5000" placeholder="Actionable work steps..." required></textarea>
+            </div>
+
+            <div class="form-group">
+                <label class="form-label" for="maintenanceComplaint">Linked Complaint (Optional)</label>
+                <select class="form-control" id="maintenanceComplaint" name="complaint_id">
                     <option value="">None / Preventive</option>
-                    <option value="C-1048">C-1048 · Monitor flickers during use</option>
-                    <option value="C-1046">C-1046 · Keyboard keys not responding</option>
+                    <?php foreach ($complaints as $complaint): ?>
+                        <?php if (!empty($complaint['complaint_id']) && in_array($complaint['status'], ['Open', 'In Progress'], true)): ?>
+                            <option value="<?= (int) $complaint['complaint_id'] ?>"><?= htmlspecialchars($complaint['code'] . ' · ' . $complaint['title']) ?></option>
+                        <?php endif; ?>
+                    <?php endforeach; ?>
                 </select>
             </div>
 

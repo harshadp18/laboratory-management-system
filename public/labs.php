@@ -4,9 +4,10 @@ require_once __DIR__ . '/../includes/header.php';
 
 $labs = getLaboratories();
 $selectedLabId = $_GET['lab'] ?? 'LAB-A';
-$selectedLab = $labs[$selectedLabId] ?? $labs['LAB-A'];
-$workstations = getWorkstations($selectedLabId);
-$components = getWorkstationComponents('Lab A - WS-03');
+$selectedLab = $labs[$selectedLabId] ?? (reset($labs) ?: null);
+$selectedLabId = $selectedLab['id'] ?? '';
+$workstations = $selectedLab ? getWorkstations($selectedLabId) : [];
+$components = getWorkstationComponents($workstations[0]['code'] ?? 'Lab A - WS-03');
 ?>
 
 <div class="page-header">
@@ -17,7 +18,7 @@ $components = getWorkstationComponents('Lab A - WS-03');
 <!-- Lab Selector Tabs (Image 2) -->
 <section class="lab-tabs-row" aria-label="Laboratory selector">
     <?php foreach ($labs as $id => $lab): ?>
-        <a class="lab-tab-card <?= $selectedLabId === $id ? 'active' : '' ?>" href="?lab=<?= urlencode($id) ?><?= $activeRole ? '&role=' . htmlspecialchars($activeRole) : '' ?>">
+        <a class="lab-tab-card <?= $selectedLabId === $id ? 'active' : '' ?>" href="?lab=<?= urlencode($id) ?>">
             <svg class="lab-tab-icon" width="22" height="22" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9.75 17L9 20l-1 1h8l-1-1-.75-3M3 13h18M5 17h14a2 2 0 002-2V5a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z"/>
             </svg>
@@ -31,27 +32,31 @@ $components = getWorkstationComponents('Lab A - WS-03');
 
 <!-- Active Lab Summary Bar -->
 <section class="lab-summary-bar">
-    <div>
-        <div class="lab-summary-title"><?= htmlspecialchars($selectedLab['code']) ?></div>
-        <div class="lab-summary-sub">
-            <?= htmlspecialchars($selectedLab['building']) ?> &middot;
-            <?= htmlspecialchars($selectedLab['floor']) ?> &middot;
-            <?= htmlspecialchars($selectedLab['room']) ?> &middot;
-            Capacity <?= $selectedLab['capacity'] ?>
+    <?php if ($selectedLab): ?>
+        <div>
+            <div class="lab-summary-title"><?= htmlspecialchars($selectedLab['code']) ?></div>
+            <div class="lab-summary-sub">
+                <?= htmlspecialchars($selectedLab['building']) ?> &middot;
+                <?= htmlspecialchars($selectedLab['floor']) ?> &middot;
+                <?= htmlspecialchars($selectedLab['room']) ?> &middot;
+                Capacity <?= (int) $selectedLab['capacity'] ?>
+            </div>
         </div>
-    </div>
-    <div class="lab-summary-badges">
-        <span class="status-pill working">
-            <span class="status-dot"></span>
-            <?= $selectedLab['working_count'] ?> Working
-        </span>
-        <?php if ($selectedLab['repair_count'] > 0): ?>
-            <span class="status-pill under-repair">
+        <div class="lab-summary-badges">
+            <span class="status-pill working">
                 <span class="status-dot"></span>
-                <?= $selectedLab['repair_count'] ?> Under Repair
+                <?= (int) $selectedLab['working_count'] ?> Working
             </span>
-        <?php endif; ?>
-    </div>
+            <?php if ($selectedLab['repair_count'] > 0): ?>
+                <span class="status-pill under-repair">
+                    <span class="status-dot"></span>
+                    <?= (int) $selectedLab['repair_count'] ?> Under Repair
+                </span>
+            <?php endif; ?>
+        </div>
+    <?php else: ?>
+        <div class="lab-summary-title">No laboratory records</div>
+    <?php endif; ?>
 </section>
 
 <!-- Workstation Search & Filters -->
@@ -90,7 +95,11 @@ $components = getWorkstationComponents('Lab A - WS-03');
 
 <!-- Workstation Cards Grid -->
 <section class="workstations-grid" id="workstationsContainer">
+    <?php if (!$workstations): ?>
+        <div class="info-callout">No workstation records are available for this laboratory.</div>
+    <?php endif; ?>
     <?php foreach ($workstations as $ws): ?>
+        <?php $componentData = htmlspecialchars(json_encode(getWorkstationComponents($ws['code']), JSON_HEX_TAG | JSON_HEX_APOS | JSON_HEX_QUOT | JSON_HEX_AMP), ENT_QUOTES, 'UTF-8'); ?>
         <article class="workstation-card <?= $ws['status'] === 'Under Repair' ? 'repair' : '' ?>"
                  data-name="<?= htmlspecialchars($ws['code']) ?>"
                  data-status="<?= htmlspecialchars($ws['status']) ?>">
@@ -119,8 +128,11 @@ $components = getWorkstationComponents('Lab A - WS-03');
             </div>
 
             <div class="workstation-card-footer">
-                <a class="view-details-link" href="javascript:void(0)"
-                   onclick="openComponentDetails('<?= htmlspecialchars($ws['code']) ?>', '<?= htmlspecialchars($ws['status']) ?>', '<?= $ws['issue'] ? 'C-1048 · Monitor flickers during use. Assigned to Aditi Shah, Lab Assistant. M-201 monitor inspection is scheduled.' : '' ?>')">
+                     <a class="view-details-link" href="#componentModal" data-component-details
+                         data-ws-code="<?= htmlspecialchars($ws['code'], ENT_QUOTES) ?>"
+                         data-ws-status="<?= htmlspecialchars($ws['status'], ENT_QUOTES) ?>"
+                         data-issue="<?= htmlspecialchars($ws['issue'] ?? '', ENT_QUOTES) ?>"
+                         data-components="<?= $componentData ?>">
                     <?= $ws['status'] === 'Under Repair' ? 'Component details selected &rarr;' : 'View component details &rarr;' ?>
                 </a>
             </div>
@@ -130,11 +142,11 @@ $components = getWorkstationComponents('Lab A - WS-03');
 
 <!-- Pagination Bar -->
 <div class="pagination-bar">
-    <div>Showing 1–6 of <?= $selectedLab['workstations_count'] ?> workstations in <?= htmlspecialchars($selectedLab['code']) ?></div>
+    <div>Showing <?= count($workstations) ?> of <?= (int) ($selectedLab['workstations_count'] ?? 0) ?> workstations<?= $selectedLab ? ' in ' . htmlspecialchars($selectedLab['code']) : '' ?></div>
     <div class="pagination-controls">
         <button class="page-btn" type="button" disabled>Previous</button>
-        <button class="page-btn active" type="button">1</button>
-        <button class="page-btn" type="button">Next</button>
+        <button class="page-btn active" type="button" aria-current="page">1</button>
+        <button class="page-btn" type="button" disabled>Next</button>
     </div>
 </div>
 
@@ -154,13 +166,13 @@ $components = getWorkstationComponents('Lab A - WS-03');
             <div class="modal-title-wrap">
                 <div class="modal-title">Component details</div>
                 <div class="modal-subhead">
-                    <span class="modal-ws-name" id="modalWsName">Lab A - WS-03</span>
-                    <span id="modalWsBadge" class="status-pill under-repair">
-                        <span class="status-dot"></span> Under Repair
+                    <span class="modal-ws-name" id="modalWsName"><?= htmlspecialchars($workstations[0]['code'] ?? 'No workstation selected') ?></span>
+                    <span id="modalWsBadge" class="status-pill <?= ($workstations[0]['status'] ?? '') === 'Under Repair' ? 'under-repair' : (($workstations[0]['status'] ?? '') === 'Working' ? 'working' : '') ?>">
+                        <span class="status-dot"></span> <?= htmlspecialchars($workstations[0]['status'] ?? 'Unavailable') ?>
                     </span>
                 </div>
                 <div style="font-size: 0.8rem; color: var(--text-muted); margin-top: 0.2rem;">
-                    Main building &middot; Floor 2 &middot; Room 201
+                    <?= $selectedLab ? htmlspecialchars($selectedLab['building'] . ' · ' . $selectedLab['floor'] . ' · ' . $selectedLab['room']) : 'No laboratory selected' ?>
                 </div>
             </div>
             <button class="btn btn-outline" style="padding: 0.35rem 0.65rem;" data-close-modal aria-label="Close modal">&times;</button>
@@ -168,15 +180,13 @@ $components = getWorkstationComponents('Lab A - WS-03');
 
         <div class="modal-body">
             <!-- Alert banner for linked complaint/repair -->
-            <div class="modal-alert-banner" id="modalAlertBanner">
+            <div class="modal-alert-banner" id="modalAlertBanner" style="display: none;">
                 <svg width="18" height="18" fill="none" stroke="currentColor" viewBox="0 0 24 24" style="flex-shrink: 0; margin-top: 1px;">
                     <circle cx="12" cy="12" r="10" stroke-width="2"/>
                     <line x1="12" y1="16" x2="12" y2="12" stroke-width="2"/>
                     <line x1="12" y1="8" x2="12.01" y2="8" stroke-width="2"/>
                 </svg>
-                <div id="modalAlertText">
-                    C-1048 &middot; Monitor flickers during use. Assigned to Aditi Shah, Lab Assistant. M-201 monitor inspection is scheduled.
-                </div>
+                <div id="modalAlertText"></div>
             </div>
 
             <!-- Category Filter Row -->
@@ -197,7 +207,7 @@ $components = getWorkstationComponents('Lab A - WS-03');
                     </select>
                 </div>
                 <div style="font-size: 0.8rem; color: var(--text-muted); margin-top: 1.25rem;">
-                    9 installed components
+                    <span id="componentCount"><?= count($components) ?> installed components</span>
                 </div>
             </div>
 
@@ -231,7 +241,7 @@ $components = getWorkstationComponents('Lab A - WS-03');
             </div>
 
             <div style="font-size: 0.775rem; color: var(--text-subtle);">
-                A dash in removed_at means the component is still installed. Serial numbers and component records shown are illustrative demo data.
+                A dash in removed_at means the component is still installed. Component records are read from PostgreSQL.
             </div>
         </div>
 

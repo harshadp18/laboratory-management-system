@@ -4,6 +4,28 @@
  */
 
 document.addEventListener('DOMContentLoaded', () => {
+    const themeToggle = document.getElementById('themeToggle');
+    if (themeToggle) {
+        const updateThemeControl = () => {
+            const isDark = document.documentElement.dataset.theme === 'dark';
+            const nextTheme = isDark ? 'light' : 'dark';
+            themeToggle.setAttribute('aria-pressed', String(isDark));
+            themeToggle.setAttribute('aria-label', `Switch to ${nextTheme} theme`);
+            themeToggle.title = `Switch to ${nextTheme} theme`;
+        };
+        themeToggle.addEventListener('click', () => {
+            const nextTheme = document.documentElement.dataset.theme === 'dark' ? 'light' : 'dark';
+            document.documentElement.dataset.theme = nextTheme;
+            try {
+                localStorage.setItem('lms_theme', nextTheme);
+            } catch (error) {
+                // The theme still applies for this page if storage is unavailable.
+            }
+            updateThemeControl();
+        });
+        updateThemeControl();
+    }
+
     // 1. Sidebar Toggle
     const sidebar = document.getElementById('sidebar');
     const collapseBtn = document.getElementById('collapseSidebarBtn');
@@ -37,13 +59,14 @@ document.addEventListener('DOMContentLoaded', () => {
     const modalBackdrop = document.getElementById('componentModal');
     const modalCloseButtons = document.querySelectorAll('[data-close-modal]');
     const categorySelect = document.getElementById('modalCategoryFilter');
-    const componentRows = document.querySelectorAll('#componentTableBody tr');
+    const componentTableBody = document.getElementById('componentTableBody');
 
-    window.openComponentDetails = function (wsCode, wsStatus, issueNote) {
+    window.openComponentDetails = function (wsCode, wsStatus, issueNote, components = []) {
         if (!modalBackdrop) return;
         const nameEl = document.getElementById('modalWsName');
         const badgeEl = document.getElementById('modalWsBadge');
         const alertEl = document.getElementById('modalAlertBanner');
+        const componentCount = document.getElementById('componentCount');
 
         if (nameEl) nameEl.textContent = wsCode || 'Lab A - WS-03';
         if (badgeEl) {
@@ -58,10 +81,51 @@ document.addEventListener('DOMContentLoaded', () => {
                 alertEl.style.display = 'none';
             }
         }
+        if (componentTableBody) {
+            componentTableBody.replaceChildren();
+            components.forEach((component) => {
+                const row = document.createElement('tr');
+                row.dataset.category = component.category || '';
+                const values = [
+                    component.category || '',
+                    `${component.brand || '—'}\n${component.model || '—'}`,
+                    component.serial || '—',
+                    component.installed_at || '—',
+                    component.removed_at || '—',
+                ];
+                values.forEach((value, index) => {
+                    const cell = document.createElement('td');
+                    cell.textContent = value;
+                    if (index === 0) cell.style.fontWeight = '600';
+                    if (index === 1) cell.style.whiteSpace = 'pre-line';
+                    if (index === 2) {
+                        cell.style.fontFamily = 'monospace';
+                        cell.style.fontSize = '0.8rem';
+                    }
+                    row.appendChild(cell);
+                });
+                componentTableBody.appendChild(row);
+            });
+            if (componentCount) componentCount.textContent = `${components.length} installed components`;
+            if (categorySelect) categorySelect.dispatchEvent(new Event('change'));
+        }
 
         modalBackdrop.classList.add('open');
         document.body.style.overflow = 'hidden';
     };
+
+    document.querySelectorAll('[data-component-details]').forEach((link) => {
+        link.addEventListener('click', (event) => {
+            event.preventDefault();
+            let components = [];
+            try {
+                components = JSON.parse(link.dataset.components || '[]');
+            } catch (error) {
+                components = [];
+            }
+            window.openComponentDetails(link.dataset.wsCode, link.dataset.wsStatus, link.dataset.issue, components);
+        });
+    });
 
     window.closeComponentDetails = function () {
         if (!modalBackdrop) return;
@@ -85,10 +149,10 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     // Filter components by category in modal
-    if (categorySelect && componentRows.length > 0) {
+    if (categorySelect && componentTableBody) {
         categorySelect.addEventListener('change', () => {
             const val = categorySelect.value.toLowerCase();
-            componentRows.forEach((tr) => {
+            componentTableBody.querySelectorAll('tr').forEach((tr) => {
                 const cat = (tr.dataset.category || '').toLowerCase();
                 if (val === 'all' || val === '' || cat === val) {
                     tr.style.display = '';
@@ -100,6 +164,7 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     // 4. Booking Time Validation (End Time > Start Time rule)
+    const bookingDateInput = document.getElementById('bookingDate');
     const startTimeInput = document.getElementById('bookingStartTime');
     const endTimeInput = document.getElementById('bookingEndTime');
     const timeFeedback = document.getElementById('timeValidationFeedback');
@@ -160,6 +225,122 @@ document.addEventListener('DOMContentLoaded', () => {
         startTimeInput.addEventListener('input', validateBookingTimes);
         endTimeInput.addEventListener('input', validateBookingTimes);
         validateBookingTimes();
+    }
+
+    const bookingLab = document.getElementById('bookingLab');
+    const bookingLabCapacity = document.getElementById('bookingLabCapacity');
+    if (bookingLab && bookingLabCapacity) {
+        const updateCapacity = () => {
+            bookingLabCapacity.textContent = bookingLab.selectedOptions[0]?.dataset.capacity || '—';
+        };
+        bookingLab.addEventListener('change', updateCapacity);
+        updateCapacity();
+    }
+
+    const availabilityLab = document.getElementById('viewAvailabilityLab');
+    const calendarEvents = document.querySelectorAll('[data-calendar-event]');
+    const calendarCells = document.querySelectorAll('[data-calendar-cell]');
+    if (availabilityLab) {
+        const filterCalendarEvents = () => {
+            calendarEvents.forEach((event) => {
+                event.hidden = availabilityLab.value !== 'all' && event.dataset.lab !== availabilityLab.value;
+            });
+            calendarCells.forEach((cell) => {
+                const occupied = [...cell.querySelectorAll('[data-calendar-event]')].some((event) => !event.hidden);
+                cell.setAttribute('aria-disabled', String(occupied));
+                cell.tabIndex = occupied ? -1 : 0;
+            });
+            if (bookingLab && availabilityLab.value !== 'all') {
+                bookingLab.value = availabilityLab.value;
+                bookingLab.dispatchEvent(new Event('change'));
+            }
+        };
+        availabilityLab.addEventListener('change', filterCalendarEvents);
+        filterCalendarEvents();
+    }
+
+    const calendarPanel = document.getElementById('bookingCalendarPanel');
+    const expandCalendarButton = document.getElementById('expandBookingCalendar');
+    if (calendarPanel && expandCalendarButton) {
+        const label = expandCalendarButton.querySelector('span');
+        const setCalendarExpanded = (expanded) => {
+            calendarPanel.classList.toggle('is-expanded', expanded);
+            expandCalendarButton.setAttribute('aria-expanded', String(expanded));
+            if (label) label.textContent = expanded ? 'Collapse' : 'Expand';
+            document.body.classList.toggle('calendar-expanded-open', expanded);
+            if (!expanded) expandCalendarButton.focus();
+        };
+        expandCalendarButton.addEventListener('click', () => {
+            setCalendarExpanded(!calendarPanel.classList.contains('is-expanded'));
+        });
+        document.addEventListener('keydown', (event) => {
+            if (event.key === 'Escape' && calendarPanel.classList.contains('is-expanded')) {
+                setCalendarExpanded(false);
+            }
+        });
+    }
+
+    if (calendarCells.length && bookingLab && bookingDateInput && startTimeInput && endTimeInput) {
+        let selectedCalendarCell = null;
+        const selectSlot = (cell) => {
+            const occupied = [...cell.querySelectorAll('[data-calendar-event]')]
+                .some((event) => availabilityLab?.value === 'all' || !event.hidden);
+            if (occupied) return;
+
+            const date = cell.dataset.day;
+            if (!date || date < bookingDateInput.min) {
+                window.showToast('Choose a current or future date for your booking.');
+                return;
+            }
+
+            const selectedLab = availabilityLab?.value;
+            if (selectedLab && selectedLab !== 'all') {
+                bookingLab.value = selectedLab;
+            }
+            if (!bookingLab.value && bookingLab.options.length) {
+                bookingLab.selectedIndex = 0;
+            }
+
+            const hour = Number(cell.dataset.hour);
+            const endHour = Math.min(hour + 1, 17);
+            bookingDateInput.value = date;
+            startTimeInput.value = `${String(hour).padStart(2, '0')}:00`;
+            endTimeInput.value = `${String(endHour).padStart(2, '0')}:00`;
+            bookingLab.dispatchEvent(new Event('change'));
+            startTimeInput.dispatchEvent(new Event('input'));
+            endTimeInput.dispatchEvent(new Event('input'));
+
+            if (selectedCalendarCell) selectedCalendarCell.classList.remove('is-selected');
+            selectedCalendarCell = cell;
+            selectedCalendarCell.classList.add('is-selected');
+            document.getElementById('bookingPurpose')?.focus();
+        };
+
+        calendarCells.forEach((cell) => {
+            cell.addEventListener('click', () => selectSlot(cell));
+            cell.addEventListener('keydown', (event) => {
+                if (event.key === 'Enter' || event.key === ' ') {
+                    event.preventDefault();
+                    selectSlot(cell);
+                }
+            });
+        });
+    }
+
+    const complaintLab = document.getElementById('complaintLab');
+    const complaintWorkstation = document.getElementById('complaintWorkstation');
+    if (complaintLab && complaintWorkstation) {
+        const filterComplaintWorkstations = () => {
+            const options = [...complaintWorkstation.options].filter((option) => option.value !== '');
+            options.forEach((option) => {
+                option.hidden = option.dataset.lab !== complaintLab.value;
+                option.disabled = option.hidden;
+            });
+            const available = options.find((option) => !option.hidden);
+            if (available) complaintWorkstation.value = available.value;
+        };
+        complaintLab.addEventListener('change', filterComplaintWorkstations);
+        filterComplaintWorkstations();
     }
 
     // 5. Workstation Live Search & Filter (labs.php)
@@ -242,18 +423,6 @@ document.addEventListener('DOMContentLoaded', () => {
             setTimeout(() => toast.remove(), 300);
         }, 3200);
     };
-
-    // Form handlers
-    const forms = document.querySelectorAll('form[data-ajax-toast]');
-    forms.forEach((f) => {
-        f.addEventListener('submit', (e) => {
-            e.preventDefault();
-            const msg = f.dataset.ajaxToast || 'Record saved successfully.';
-            window.showToast(msg);
-            f.reset();
-            validateBookingTimes();
-        });
-    });
 
     // Confirmation popups
     document.querySelectorAll('[data-confirm]').forEach((element) => {

@@ -1,17 +1,32 @@
 <?php
-$pageTitle = 'Lab Assistant Dashboard | Laboratory Management System';
+$pageTitle = 'Dashboard | Laboratory Management System';
 require_once __DIR__ . '/../includes/header.php';
 
 $stats = getSystemStats();
 $labs = getLaboratories();
 $recentActivities = getRecentActivity();
 $allBookings = getBookings();
-$pendingBookings = array_filter($allBookings, fn($b) => $b['status'] === 'Pending');
+$pendingBookings = array_values(array_filter($allBookings, fn($booking) => $booking['status'] === 'Pending'));
+usort($pendingBookings, static function (array $left, array $right): int {
+    $timeOrder = strtotime($left['created_at']) <=> strtotime($right['created_at']);
+    return $timeOrder !== 0 ? $timeOrder : ($left['booking_id'] <=> $right['booking_id']);
+});
+$dashboardTitle = match ($currentUser['role']) {
+    'Administrator' => 'Administrator Dashboard',
+    'Faculty' => 'Faculty Dashboard',
+    'Student' => 'Student Dashboard',
+    default => 'Lab Assistant Dashboard',
+};
+$dashboardSubtitle = match ($currentUser['role']) {
+    'Faculty' => 'A quick view of laboratory availability and booking activity.',
+    'Student' => 'A quick view of laboratory availability and complaint activity.',
+    default => 'Your control center for bookings, complaints and lab maintenance.',
+};
 ?>
 
 <div class="page-header">
-    <h1 class="page-title">Lab Assistant Dashboard</h1>
-    <p class="page-subtitle">Your control center for bookings, complaints and lab maintenance.</p>
+    <h1 class="page-title"><?= htmlspecialchars($dashboardTitle) ?></h1>
+    <p class="page-subtitle"><?= htmlspecialchars($dashboardSubtitle) ?></p>
 </div>
 
 <!-- 4 Key Stat Cards (Image 4 & Screen 1) -->
@@ -73,24 +88,32 @@ $pendingBookings = array_filter($allBookings, fn($b) => $b['status'] === 'Pendin
 <section class="quick-actions-bar">
     <div class="quick-actions-left">
         <span class="quick-actions-label">Quick actions</span>
+        <?php if ($currentUser['role'] === 'Lab Assistant'): ?>
         <a class="btn btn-primary" href="maintenance.php">
             <svg width="16" height="16" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4" />
             </svg>
             Log Maintenance
         </a>
+        <?php endif; ?>
+        <?php if ($currentUser['role'] === 'Lab Assistant'): ?>
         <a class="btn btn-outline" href="#pending-bookings">
             <svg width="16" height="16" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z"/>
             </svg>
             Approve Booking
         </a>
+        <?php endif; ?>
+        <?php if ($currentUser['role'] === 'Student'): ?>
         <a class="btn btn-outline" href="complaints.php">
             <svg width="16" height="16" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4" />
             </svg>
             Report Issue
         </a>
+        <?php elseif ($currentUser['role'] === 'Faculty'): ?>
+            <a class="btn btn-outline" href="bookings.php">Request a booking</a>
+        <?php endif; ?>
     </div>
     <div class="date-stamp"><?= date('l, d F Y') ?></div>
 </section>
@@ -104,6 +127,9 @@ $pendingBookings = array_filter($allBookings, fn($b) => $b['status'] === 'Pendin
             <span class="card-panel-tag">Today</span>
         </div>
         <div class="activity-feed">
+            <?php if (!$recentActivities): ?>
+                <div class="panel-footer-note">No activity records found.</div>
+            <?php endif; ?>
             <?php foreach ($recentActivities as $item): ?>
                 <div class="activity-item">
                     <div class="activity-icon" style="background: <?= $item['color'] ?>15; color: <?= $item['color'] ?>;">
@@ -136,6 +162,9 @@ $pendingBookings = array_filter($allBookings, fn($b) => $b['status'] === 'Pendin
             <span class="card-panel-tag">Right now</span>
         </div>
         <div class="lab-availability-list">
+            <?php if (!$labs): ?>
+                <div class="panel-footer-note">No laboratory records found.</div>
+            <?php endif; ?>
             <?php foreach ($labs as $lab): ?>
                 <div class="lab-item-row">
                     <div class="lab-item-info">
@@ -172,11 +201,15 @@ $pendingBookings = array_filter($allBookings, fn($b) => $b['status'] === 'Pendin
                 <tr>
                     <th>Faculty / request</th>
                     <th>Lab & session</th>
+                    <th>Submitted</th>
                     <th>Status</th>
                     <th>Review</th>
                 </tr>
             </thead>
             <tbody>
+                <?php if (!$pendingBookings): ?>
+                    <tr><td colspan="5">No pending booking records found.</td></tr>
+                <?php endif; ?>
                 <?php foreach ($pendingBookings as $booking): ?>
                     <tr>
                         <td>
@@ -187,6 +220,7 @@ $pendingBookings = array_filter($allBookings, fn($b) => $b['status'] === 'Pendin
                             <div class="table-primary-text"><?= htmlspecialchars($booking['lab']) ?></div>
                             <div class="table-sub-text"><?= htmlspecialchars($booking['date']) ?> &middot; <?= htmlspecialchars($booking['time']) ?></div>
                         </td>
+                        <td><?= htmlspecialchars((new DateTimeImmutable($booking['created_at']))->setTimezone(new DateTimeZone('Asia/Kolkata'))->format('d M Y, H:i')) ?></td>
                         <td>
                             <span class="status-pill pending">
                                 <span class="status-dot"></span>
@@ -195,8 +229,24 @@ $pendingBookings = array_filter($allBookings, fn($b) => $b['status'] === 'Pendin
                         </td>
                         <td>
                             <div class="action-links">
-                                <a class="action-link primary" href="javascript:void(0)" onclick="showToast('Booking <?= $booking['code'] ?> approved.')">Approve</a>
-                                <a class="action-link danger" href="javascript:void(0)" onclick="showToast('Booking <?= $booking['code'] ?> rejected.')">Reject</a>
+                                <?php if ($currentUser['role'] === 'Lab Assistant' && !empty($booking['booking_id'])): ?>
+                                    <form method="post" class="booking-review-form">
+                                        <input type="hidden" name="csrf_token" value="<?= htmlspecialchars($_SESSION['csrf_token']) ?>">
+                                        <input type="hidden" name="action" value="review_booking">
+                                        <input type="hidden" name="booking_id" value="<?= (int) $booking['booking_id'] ?>">
+                                        <input type="hidden" name="status" value="Approved">
+                                        <button class="action-link primary" type="submit">Approve</button>
+                                    </form>
+                                    <form method="post" class="booking-review-form">
+                                        <input type="hidden" name="csrf_token" value="<?= htmlspecialchars($_SESSION['csrf_token']) ?>">
+                                        <input type="hidden" name="action" value="review_booking">
+                                        <input type="hidden" name="booking_id" value="<?= (int) $booking['booking_id'] ?>">
+                                        <input type="hidden" name="status" value="Rejected">
+                                        <button class="action-link danger" type="submit">Reject</button>
+                                    </form>
+                                <?php else: ?>
+                                    <span class="table-sub-text">Lab Assistant review required</span>
+                                <?php endif; ?>
                             </div>
                         </td>
                     </tr>

@@ -1,28 +1,22 @@
 <?php
 require_once __DIR__ . '/data.php';
+require_once __DIR__ . '/auth.php';
 
+startLmsSession();
 $pageTitle = $pageTitle ?? 'Laboratory Management System';
 $currentPage = basename($_SERVER['PHP_SELF']);
-
-// Active user context (supports custom role switch or page default)
-$activeRole = $_GET['role'] ?? null;
-if (!$activeRole) {
-    if ($currentPage === 'bookings.php') {
-        $activeRole = 'faculty';
-    } elseif ($currentPage === 'complaints.php') {
-        $activeRole = 'student';
-    } else {
-        $activeRole = 'assistant';
-    }
+$database = getDbOrNull();
+$databaseConnected = $database !== null;
+if (!$database) {
+    header('Location: login.php');
+    exit;
 }
 
-$userData = [
-    'assistant' => ['name' => 'Aditi Shah', 'role' => 'Lab Assistant', 'initials' => 'AS'],
-    'faculty'   => ['name' => 'Prof. Neha Rao', 'role' => 'Faculty', 'initials' => 'NR'],
-    'student'   => ['name' => 'Riya Patel', 'role' => 'Student', 'initials' => 'RP'],
-    'admin'     => ['name' => 'System Admin', 'role' => 'Administrator', 'initials' => 'SA'],
-];
-$currentUser = $userData[$activeRole] ?? $userData['assistant'];
+$currentUser = requireAuthenticatedUser($database);
+enforcePageRole($currentUser, $currentPage);
+handlePostAction($currentUser);
+$flashMessage = $_SESSION['flash'] ?? null;
+unset($_SESSION['flash']);
 
 $navigationItems = [
     'index.php' => [
@@ -59,6 +53,16 @@ $breadcrumbTitle = $navigationItems[$currentPage]['label'] ?? 'Dashboard';
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <title><?= htmlspecialchars($pageTitle) ?></title>
+    <script>
+        try {
+            const savedTheme = localStorage.getItem('lms_theme');
+            document.documentElement.dataset.theme = savedTheme === 'light' || savedTheme === 'dark'
+                ? savedTheme
+                : (window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light');
+        } catch (error) {
+            document.documentElement.dataset.theme = 'light';
+        }
+    </script>
     <link rel="stylesheet" href="assets/css/style.css">
 </head>
 <body>
@@ -81,7 +85,8 @@ $breadcrumbTitle = $navigationItems[$currentPage]['label'] ?? 'Dashboard';
 
         <nav class="sidebar-nav" aria-label="Main navigation">
             <?php foreach ($navigationItems as $file => $item): ?>
-                <a class="nav-link <?= $currentPage === $file ? 'active' : '' ?>" href="<?= $file ?><?= $activeRole ? '?role=' . htmlspecialchars($activeRole) : '' ?>">
+                <?php if (!userCanAccessPage($currentUser['role'], $file)) continue; ?>
+                <a class="nav-link <?= $currentPage === $file ? 'active' : '' ?>" href="<?= $file ?>">
                     <?= $item['icon'] ?>
                     <span class="nav-label"><?= $item['label'] ?></span>
                 </a>
@@ -113,9 +118,13 @@ $breadcrumbTitle = $navigationItems[$currentPage]['label'] ?? 'Dashboard';
             </div>
 
             <div class="topbar-right">
+                <button class="theme-toggle" id="themeToggle" type="button" aria-label="Switch to dark theme" aria-pressed="false" title="Switch to dark theme">
+                    <svg class="theme-icon theme-icon-moon" width="18" height="18" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.8" d="M20.5 15.5A8.5 8.5 0 018.5 3.5a8.5 8.5 0 1012 12z"/></svg>
+                    <svg class="theme-icon theme-icon-sun" width="18" height="18" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="4" stroke-width="1.8"/><path stroke-linecap="round" stroke-width="1.8" d="M12 2v2m0 16v2M4.93 4.93l1.42 1.42m11.3 11.3 1.42 1.42M2 12h2m16 0h2M4.93 19.07l1.42-1.42m11.3-11.3 1.42-1.42"/></svg>
+                </button>
                 <div class="demo-pill">
                     <span class="dot"></span>
-                    <span><?= isDbConnected() ? 'PostgreSQL Connected' : 'Demo data' ?></span>
+                    <span><?= $databaseConnected ? 'PostgreSQL Connected' : 'Database disconnected' ?></span>
                 </div>
 
                 <div class="user-profile-btn" id="userProfileBtn">
@@ -128,26 +137,18 @@ $breadcrumbTitle = $navigationItems[$currentPage]['label'] ?? 'Dashboard';
                         <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"/>
                     </svg>
 
-                    <!-- Interactive role switcher dropdown -->
+                    <!-- Account actions -->
                     <div class="user-menu-dropdown" id="userMenuDropdown">
                         <div class="dropdown-user-header">
                             <div class="dropdown-user-name"><?= htmlspecialchars($currentUser['name']) ?></div>
                             <span class="dropdown-user-role-badge">&bull; <?= htmlspecialchars($currentUser['role']) ?></span>
                         </div>
-                        <div class="dropdown-role-label">Switch Persona</div>
+                        <div class="dropdown-role-label">Account</div>
                         <div class="dropdown-role-list">
-                            <a class="role-option-item <?= $activeRole === 'assistant' ? 'active' : '' ?>" href="?role=assistant">
-                                <span>Aditi Shah (Assistant)</span>
-                                <?= $activeRole === 'assistant' ? '&check;' : '' ?>
-                            </a>
-                            <a class="role-option-item <?= $activeRole === 'faculty' ? 'active' : '' ?>" href="?role=faculty">
-                                <span>Prof. Neha Rao (Faculty)</span>
-                                <?= $activeRole === 'faculty' ? '&check;' : '' ?>
-                            </a>
-                            <a class="role-option-item <?= $activeRole === 'student' ? 'active' : '' ?>" href="?role=student">
-                                <span>Riya Patel (Student)</span>
-                                <?= $activeRole === 'student' ? '&check;' : '' ?>
-                            </a>
+                            <form method="post" action="logout.php">
+                                <input type="hidden" name="csrf_token" value="<?= htmlspecialchars(lmsCsrfToken()) ?>">
+                                <button class="role-option-item" type="submit">Sign out</button>
+                            </form>
                         </div>
                     </div>
                 </div>
@@ -156,3 +157,13 @@ $breadcrumbTitle = $navigationItems[$currentPage]['label'] ?? 'Dashboard';
 
         <!-- Main Page Container -->
         <main class="page-container">
+            <?php if (!$databaseConnected): ?>
+                <div class="notice-banner error" role="status">
+                    PostgreSQL is not connected. Configure <strong>config/database.php</strong> and enable <strong>pdo_pgsql</strong>. Sample data is disabled.
+                </div>
+            <?php endif; ?>
+            <?php if ($flashMessage): ?>
+                <div class="notice-banner <?= $flashMessage['type'] === 'success' ? 'success' : 'error' ?>" role="status">
+                    <?= htmlspecialchars($flashMessage['message']) ?>
+                </div>
+            <?php endif; ?>

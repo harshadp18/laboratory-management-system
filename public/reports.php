@@ -4,85 +4,150 @@ require_once __DIR__ . '/../includes/header.php';
 
 $views = [
     [
-        'name' => 'v_lab_workstation_status',
-        'description' => 'Aggregates laboratory capacity, total workstations, working count, and under-repair count via outer joins.',
-        'sql' => "CREATE OR REPLACE VIEW v_lab_workstation_status AS
-SELECT 
-    l.lab_id,
-    l.lab_name,
-    l.capacity,
-    COUNT(w.workstation_id) AS total_workstations,
-    COUNT(CASE WHEN w.status = 'Working' THEN 1 END) AS working_count,
-    COUNT(CASE WHEN w.status = 'Under Repair' THEN 1 END) AS under_repair_count
-FROM laboratories l
-LEFT JOIN workstations w ON l.lab_id = w.lab_id
-GROUP BY l.lab_id, l.lab_name, l.capacity;",
-        'sample_headers' => ['Lab Code', 'Lab Name', 'Capacity', 'Total Systems', 'Working', 'Under Repair'],
-        'sample_rows' => [
-            ['LAB-A', 'Lab A - Main building, Room 201', '30', '30', '29', '1'],
-            ['LAB-B', 'Lab B - Room 202', '24', '24', '23', '1'],
-            ['LAB-C', 'Lab C - Room 301', '20', '20', '19', '1'],
-            ['LAB-D', 'Lab D - Room 302', '20', '20', '20', '0'],
-        ],
+        'name' => 'People and roles',
+        'description' => 'Users and their role-specific faculty, student, assistant, and administrator details.',
+        'query' => 'SELECT user_id, full_name, role, department, shift_timing, roll_no, year_of_study, access_level FROM v_user_directory ORDER BY user_id',
+        'sample_headers' => ['ID', 'Name', 'Role', 'Department', 'Shift', 'Roll number', 'Year', 'Access level'],
+        'rows' => [],
     ],
     [
-        'name' => 'v_open_complaints',
-        'description' => 'Joins complaints with workstation location, reporting user, and assigned lab assistant for fast triage.',
-        'sql' => "CREATE OR REPLACE VIEW v_open_complaints AS
-SELECT 
-    c.complaint_id,
-    c.complaint_code,
-    c.title,
-    w.workstation_code,
-    l.lab_name,
-    u_student.full_name AS student_name,
-    u_assistant.full_name AS assigned_assistant,
-    c.status,
-    c.raised_at
-FROM complaints c
-JOIN workstations w ON c.workstation_id = w.workstation_id
-JOIN laboratories l ON w.lab_id = l.lab_id
-JOIN users u_student ON c.student_id = u_student.user_id
-LEFT JOIN users u_assistant ON c.assigned_to = u_assistant.user_id
-WHERE c.status <> 'Resolved';",
-        'sample_headers' => ['Code', 'Title', 'Workstation', 'Student', 'Assigned To', 'Status', 'Raised At'],
-        'sample_rows' => [
-            ['C-1048', 'Monitor flickers during use', 'Lab A / WS-03', 'Riya Patel', 'Aditi Shah', 'Open', '05 Oct 2026, 10:20'],
-            ['C-1046', 'Keyboard keys not responding', 'Lab C / WS-12', 'Riya Patel', 'Aditi Shah', 'In Progress', '05 Oct 2026, 09:15'],
-        ],
+        'name' => 'Phone directory',
+        'description' => 'Phone numbers associated with each user account.',
+        'query' => "SELECT u.first_name || ' ' || u.last_name AS full_name, u.role, p.phone_number
+            FROM user_phone_numbers p JOIN users u ON u.user_id = p.user_id
+            ORDER BY u.user_id, p.phone_number",
+        'sample_headers' => ['Name', 'Role', 'Phone number'],
+        'rows' => [],
     ],
     [
-        'name' => 'v_booking_summary',
-        'description' => 'Combines faculty reservations with laboratory availability and session details for scheduling reviews.',
-        'sql' => "CREATE OR REPLACE VIEW v_booking_summary AS
-SELECT 
-    b.booking_id,
-    b.booking_code,
-    u.full_name AS faculty_name,
-    l.lab_name,
-    b.session_date,
-    b.start_time,
-    b.end_time,
-    b.purpose,
-    b.status
-FROM bookings b
-JOIN users u ON b.faculty_id = u.user_id
-JOIN laboratories l ON b.lab_id = l.lab_id
-ORDER BY b.session_date DESC, b.start_time ASC;",
-        'sample_headers' => ['Code', 'Faculty', 'Laboratory', 'Date', 'Time Slot', 'Purpose', 'Status'],
-        'sample_rows' => [
-            ['BK-302', 'Prof. Neha Rao', 'Lab A', '06 Oct 2026', '10:00–12:00', 'Database systems', 'Pending'],
-            ['BK-303', 'Prof. Arjun Mehta', 'Lab B', '07 Oct 2026', '13:00–15:00', 'Computer networks', 'Pending'],
-            ['BK-304', 'Prof. Kavya Iyer', 'Lab D', '08 Oct 2026', '09:00–11:00', 'Programming practice', 'Pending'],
-            ['BK-301', 'Prof. Neha Rao', 'Lab A', '05 Oct 2026', '11:00–13:00', 'DBMS practical', 'Approved'],
-        ],
+        'name' => 'Laboratory summary',
+        'description' => 'Capacity and record counts for each laboratory.',
+        'query' => 'SELECT lab_id, lab_name, capacity, workstation_count, booking_count, complaint_count, unresolved_complaints, maintenance_count FROM v_lab_summary ORDER BY lab_id',
+        'sample_headers' => ['ID', 'Laboratory', 'Capacity', 'Workstations', 'Bookings', 'Complaints', 'Unresolved', 'Maintenance'],
+        'rows' => [],
+    ],
+    [
+        'name' => 'Installed components',
+        'description' => 'Currently installed hardware by workstation, including its serial number.',
+        'query' => 'SELECT lab_name, workstation_no, component_name, category, brand, model, serial_number, installed_at FROM v_workstation_inventory WHERE component_name IS NOT NULL ORDER BY lab_name, workstation_no, category',
+        'sample_headers' => ['Laboratory', 'Workstation', 'Component', 'Category', 'Brand', 'Model', 'Serial number', 'Installed'],
+        'rows' => [],
+    ],
+    [
+        'name' => 'Component register',
+        'description' => 'Every component record, including hardware that is not currently installed.',
+        'query' => "SELECT c.component_id, c.component_name, c.category, c.brand, c.model, c.serial_number,
+                l.lab_name, ic.workstation_no, ic.installed_at
+            FROM components c
+            LEFT JOIN installed_components ic ON ic.component_id = c.component_id AND ic.removed_at IS NULL
+            LEFT JOIN laboratories l ON l.lab_id = ic.lab_id
+            ORDER BY c.component_id",
+        'sample_headers' => ['ID', 'Component', 'Category', 'Brand', 'Model', 'Serial number', 'Laboratory', 'Workstation', 'Installed'],
+        'rows' => [],
+    ],
+    [
+        'name' => 'Bookings',
+        'description' => 'All booking requests, requesters, approvers, dates, and statuses.',
+        'query' => 'SELECT booking_id, lab_name, requested_by, approved_by_name, purpose, start_time, end_time, duration, status FROM v_booking_details ORDER BY start_time DESC',
+        'sample_headers' => ['ID', 'Laboratory', 'Requested by', 'Approved by', 'Purpose', 'Start', 'End', 'Duration', 'Status'],
+        'rows' => [],
+    ],
+    [
+        'name' => 'Complaint register',
+        'description' => 'All submitted complaints, including resolved tickets.',
+        'query' => "SELECT c.complaint_id, l.lab_name, c.workstation_no,
+                reporter.first_name || ' ' || reporter.last_name AS reported_by,
+                assistant.first_name || ' ' || assistant.last_name AS assigned_to,
+                c.problem_description, c.escalation_reason, c.status, c.raised_at, c.resolved_at
+            FROM complaints c
+            JOIN laboratories l ON l.lab_id = c.lab_id
+            JOIN users reporter ON reporter.user_id = c.user_id
+            LEFT JOIN users assistant ON assistant.user_id = c.assigned_to
+            ORDER BY c.raised_at DESC",
+        'sample_headers' => ['ID', 'Laboratory', 'Workstation', 'Reported by', 'Assigned to', 'Description', 'Escalation', 'Status', 'Raised', 'Resolved'],
+        'rows' => [],
+    ],
+    [
+        'name' => 'Maintenance history',
+        'description' => 'Scheduled, active, and completed maintenance tasks.',
+        'query' => 'SELECT maintenance_id, lab_name, workstation_no, maintenance_type, description, performed_by_name, complaint_id, start_time, end_time, status FROM v_maintenance_history ORDER BY start_time DESC',
+        'sample_headers' => ['ID', 'Laboratory', 'Workstation', 'Type', 'Description', 'Performed by', 'Complaint ID', 'Start', 'End', 'Status'],
+        'rows' => [],
+    ],
+    [
+        'name' => 'Software packages',
+        'description' => 'Software catalog and license details.',
+        'query' => 'SELECT software_id, software_name, version, license_type, license_expiry FROM software_packages ORDER BY software_name, version',
+        'sample_headers' => ['ID', 'Software', 'Version', 'License type', 'License expiry'],
+        'rows' => [],
+    ],
+    [
+        'name' => 'Installed software',
+        'description' => 'Software installed on each workstation.',
+        'query' => 'SELECT lab_name, workstation_no, software_name, version, license_type, license_expiry, installed_at FROM v_workstation_software ORDER BY lab_name, workstation_no, software_name',
+        'sample_headers' => ['Laboratory', 'Workstation', 'Software', 'Version', 'License type', 'License expiry', 'Installed'],
+        'rows' => [],
+    ],
+    [
+        'name' => 'Open complaints',
+        'description' => 'Unresolved complaints with their reporting user and assigned assistant.',
+        'query' => 'SELECT complaint_id, lab_name, workstation_no, raised_by, assigned_to_name, problem_description, escalation_reason, status, raised_at FROM v_open_complaints ORDER BY raised_at DESC',
+        'sample_headers' => ['ID', 'Laboratory', 'Workstation', 'Reported by', 'Assigned to', 'Description', 'Escalation', 'Status', 'Raised'],
+        'rows' => [],
     ],
 ];
+
+$db = getDbOrNull();
+foreach ($views as &$view) {
+    $view['rows'] = [];
+    $view['connected'] = false;
+}
+unset($view);
+if ($db) {
+    foreach ($views as &$view) {
+        try {
+            $view['rows'] = array_map('array_values', $db->query($view['query'])->fetchAll());
+            $view['connected'] = true;
+        } catch (Throwable $e) {
+            $view['rows'] = [];
+        }
+    }
+    unset($view);
+}
+
+$reportMetrics = [
+    'view_count' => '—',
+    'operational_rate' => '—',
+    'operational_detail' => 'Connect PostgreSQL to load this metric',
+    'resolution_time' => '—',
+    'resolution_detail' => 'Connect PostgreSQL to load this metric',
+    'component_count' => '—',
+];
+if ($db) {
+    try {
+        $reportMetrics['view_count'] = (int) $db->query("SELECT COUNT(*) FROM information_schema.views WHERE table_schema = 'public'")->fetchColumn();
+        $totalWorkstations = (int) $db->query('SELECT COUNT(*) FROM workstations')->fetchColumn();
+        $repairWorkstations = (int) $db->query("SELECT COUNT(DISTINCT (lab_id, workstation_no)) FROM complaints WHERE status IN ('Open', 'In Progress') AND workstation_no IS NOT NULL")->fetchColumn();
+        $reportMetrics['operational_rate'] = $totalWorkstations > 0
+            ? number_format((($totalWorkstations - $repairWorkstations) / $totalWorkstations) * 100, 1) . '%'
+            : '0%';
+        $reportMetrics['operational_detail'] = ($totalWorkstations - $repairWorkstations) . ' of ' . $totalWorkstations . ' workstations online';
+        $averageMinutes = $db->query("SELECT AVG(EXTRACT(EPOCH FROM (resolved_at - raised_at)) / 60)
+            FROM complaints WHERE resolved_at IS NOT NULL")->fetchColumn();
+        if ($averageMinutes !== null) {
+            $minutes = (int) round((float) $averageMinutes);
+            $reportMetrics['resolution_time'] = intdiv($minutes, 60) . 'h ' . ($minutes % 60) . 'm';
+        }
+        $reportMetrics['component_count'] = (string) $db->query('SELECT COUNT(*) FROM installed_components WHERE removed_at IS NULL')->fetchColumn();
+    } catch (Throwable $e) {
+        // Keep sample metrics if the database is only partially initialized.
+    }
+}
 ?>
 
 <div class="page-header">
     <h1 class="page-title">Database Reports &amp; Views</h1>
-    <p class="page-subtitle">Demonstrate relational DBMS concepts: multi-table JOINs, GROUP BY aggregations, and PostgreSQL VIEWs.</p>
+            <p class="page-subtitle">Records from your PostgreSQL users, laboratories, equipment, bookings, complaints, maintenance, and software.</p>
 </div>
 
 <!-- 3 Analytical Overview Cards -->
@@ -96,7 +161,7 @@ ORDER BY b.session_date DESC, b.start_time ASC;",
                 </svg>
             </div>
         </div>
-        <div class="stat-value">3</div>
+        <div class="stat-value"><?= htmlspecialchars((string) $reportMetrics['view_count']) ?></div>
         <div class="stat-subtext">Optimized relational views</div>
     </article>
 
@@ -109,8 +174,8 @@ ORDER BY b.session_date DESC, b.start_time ASC;",
                 </svg>
             </div>
         </div>
-        <div class="stat-value">96.8%</div>
-        <div class="stat-subtext">91 of 94 workstations online</div>
+        <div class="stat-value"><?= htmlspecialchars($reportMetrics['operational_rate']) ?></div>
+        <div class="stat-subtext"><?= htmlspecialchars($reportMetrics['operational_detail']) ?></div>
     </article>
 
     <article class="stat-card">
@@ -122,8 +187,8 @@ ORDER BY b.session_date DESC, b.start_time ASC;",
                 </svg>
             </div>
         </div>
-        <div class="stat-value">1h 15m</div>
-        <div class="stat-subtext">Average ticket triage turnaround</div>
+        <div class="stat-value"><?= htmlspecialchars($reportMetrics['resolution_time']) ?></div>
+        <div class="stat-subtext"><?= htmlspecialchars($reportMetrics['resolution_detail']) ?></div>
     </article>
 
     <article class="stat-card">
@@ -135,35 +200,29 @@ ORDER BY b.session_date DESC, b.start_time ASC;",
                 </svg>
             </div>
         </div>
-        <div class="stat-value">846</div>
+        <div class="stat-value"><?= htmlspecialchars($reportMetrics['component_count']) ?></div>
         <div class="stat-subtext">Across 9 hardware categories</div>
     </article>
 </section>
 
-<!-- PostgreSQL Views Showcase -->
+<!-- Database Records -->
 <div style="display: flex; flex-direction: column; gap: 2rem;">
     <?php foreach ($views as $view): ?>
         <section class="card-panel">
             <div class="card-panel-header" style="background: #fafafa;">
                 <div>
-                    <h2 class="card-panel-title" style="font-family: monospace; font-size: 1.05rem; color: var(--primary);">
+                    <h2 class="card-panel-title">
                         <?= htmlspecialchars($view['name']) ?>
                     </h2>
                     <div style="font-size: 0.8rem; color: var(--text-muted); margin-top: 0.15rem;">
                         <?= htmlspecialchars($view['description']) ?>
                     </div>
                 </div>
-                <span class="status-pill completed">
-                    <span class="status-dot"></span> View Ready
+                <span class="status-pill <?= $view['connected'] ? 'completed' : 'pending' ?>">
+                    <span class="status-dot"></span> <?= $view['connected'] ? 'Live data' : 'View unavailable' ?>
                 </span>
             </div>
 
-            <!-- SQL Definition Box -->
-            <div style="background: #0f172a; color: #f8fafc; padding: 1rem 1.25rem; font-family: monospace; font-size: 0.775rem; line-height: 1.6; overflow-x: auto;">
-                <pre style="margin: 0;"><code><?= htmlspecialchars($view['sql']) ?></code></pre>
-            </div>
-
-            <!-- Result Data Preview -->
             <div class="data-table-wrap">
                 <table class="data-table">
                     <thead>
@@ -174,9 +233,13 @@ ORDER BY b.session_date DESC, b.start_time ASC;",
                         </tr>
                     </thead>
                     <tbody>
-                        <?php foreach ($view['sample_rows'] as $row): ?>
+                        <?php if (!$view['rows']): ?>
+                            <tr><td colspan="<?= count($view['sample_headers']) ?>">No database rows available.</td></tr>
+                        <?php endif; ?>
+                        <?php foreach ($view['rows'] as $row): ?>
                             <tr>
                                 <?php foreach ($row as $cell): ?>
+                                    <?php $cell = $cell === null ? '—' : (string) $cell; ?>
                                     <td>
                                         <?php if (in_array($cell, ['Pending', 'Open', 'Under Repair'])): ?>
                                             <span class="status-pill pending"><span class="status-dot"></span> <?= htmlspecialchars($cell) ?></span>
@@ -202,7 +265,7 @@ ORDER BY b.session_date DESC, b.start_time ASC;",
         <line x1="12" y1="16" x2="12" y2="12" stroke-width="2"/>
         <line x1="12" y1="8" x2="12.01" y2="8" stroke-width="2"/>
     </svg>
-    <span>These views are ready to be included in <code>database/views.sql</code> to demonstrate SQL JOINs, aggregate functions, and relational normalization in your DBMS project evaluation.</span>
+    <span>Each table is read from the connected PostgreSQL database. Some sections use the database views defined in <code>database/views.sql</code>.</span>
 </div>
 
 <?php require_once __DIR__ . '/../includes/footer.php'; ?>

@@ -2,8 +2,13 @@
 $pageTitle = 'Student Ticketing & Complaints | Laboratory Management System';
 require_once __DIR__ . '/../includes/header.php';
 
-$complaints = getComplaints();
+$isStudent = $currentUser['role'] === 'Student';
+$complaints = getComplaints($isStudent ? 'student' : null);
 $labs = getLaboratories();
+$workstationsByLab = [];
+foreach ($labs as $labId => $lab) {
+    $workstationsByLab[$labId] = getWorkstations($labId);
+}
 ?>
 
 <div class="page-header">
@@ -11,6 +16,7 @@ $labs = getLaboratories();
     <p class="page-subtitle">Tell us what's not working. Your Lab Assistant will help you resolve it.</p>
 </div>
 
+<?php if ($isStudent): ?>
 <!-- New Complaint Form Card (Image 1) -->
 <section class="card-panel" style="margin-bottom: 2rem;">
     <div class="card-panel-header">
@@ -18,27 +24,29 @@ $labs = getLaboratories();
         <span class="card-panel-tag">Required fields marked *</span>
     </div>
 
-    <form style="padding: 1.5rem;" data-ajax-toast="Complaint submitted successfully. Ticket C-1049 created.">
+    <form method="post" style="padding: 1.5rem;">
+        <input type="hidden" name="csrf_token" value="<?= htmlspecialchars($_SESSION['csrf_token']) ?>">
+        <input type="hidden" name="action" value="create_complaint">
         <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 1.25rem; margin-bottom: 1.25rem;">
             <div class="form-group">
                 <label class="form-label" for="complaintLab">Lab *</label>
-                <select class="form-control" id="complaintLab" required>
-                    <option value="Lab A">Lab A - Main building, Room 201</option>
-                    <option value="Lab B">Lab B - Room 202</option>
-                    <option value="Lab C">Lab C - Room 301</option>
-                    <option value="Lab D">Lab D - Room 302</option>
+                <select class="form-control" id="complaintLab" name="lab_id" required>
+                    <?php foreach ($labs as $id => $lab): ?>
+                        <option value="<?= htmlspecialchars($id) ?>"><?= htmlspecialchars($lab['name']) ?></option>
+                    <?php endforeach; ?>
                 </select>
             </div>
 
             <div class="form-group">
                 <label class="form-label" for="complaintWorkstation">Workstation *</label>
-                <select class="form-control" id="complaintWorkstation" required>
-                    <option value="Lab A - WS-05">Lab A - WS-05</option>
-                    <option value="Lab A - WS-01">Lab A - WS-01</option>
-                    <option value="Lab A - WS-02">Lab A - WS-02</option>
-                    <option value="Lab A - WS-03">Lab A - WS-03</option>
-                    <option value="Lab A - WS-04">Lab A - WS-04</option>
-                    <option value="Lab A - WS-06">Lab A - WS-06</option>
+                <select class="form-control" id="complaintWorkstation" name="workstation_no" required>
+                    <?php foreach ($workstationsByLab as $labId => $workstations): ?>
+                        <?php foreach ($workstations as $workstation): ?>
+                            <option value="<?= htmlspecialchars($workstation['workstation_no'] ?? substr($workstation['code'], strrpos($workstation['code'], ' - ') + 3)) ?>" data-lab="<?= htmlspecialchars($labId) ?>">
+                                <?= htmlspecialchars($workstation['code']) ?>
+                            </option>
+                        <?php endforeach; ?>
+                    <?php endforeach; ?>
                 </select>
             </div>
         </div>
@@ -57,7 +65,7 @@ $labs = getLaboratories();
                 <button class="toolbar-btn" type="button" title="Link">&#128279;</button>
             </div>
             
-            <textarea class="editor-textarea" id="problemDescription" rows="4" required placeholder="Describe the problem...">The front USB ports on WS-05 are not detecting my pen drive. I tried both ports and restarted the computer, but the issue persists.</textarea>
+            <textarea class="editor-textarea" id="problemDescription" name="description" rows="4" maxlength="10000" required placeholder="Describe the problem..."></textarea>
             
             <div style="font-size: 0.775rem; color: var(--text-muted); margin-top: 0.35rem;">
                 Include the symptoms and any steps you have already tried.
@@ -81,12 +89,13 @@ $labs = getLaboratories();
         </div>
     </form>
 </section>
+<?php endif; ?>
 
 <!-- My Tickets List Section (Image 1) -->
 <section class="card-panel">
     <div class="card-panel-header">
-        <h2 class="card-panel-title">My tickets</h2>
-        <span class="card-panel-tag"><?= count($complaints) ?> tickets &middot; Riya Patel</span>
+        <h2 class="card-panel-title"><?= $isStudent ? 'My tickets' : 'All complaints' ?></h2>
+        <span class="card-panel-tag"><?= count($complaints) ?> tickets &middot; <?= htmlspecialchars($currentUser['name']) ?></span>
     </div>
 
     <div class="data-table-wrap">
@@ -100,6 +109,9 @@ $labs = getLaboratories();
                 </tr>
             </thead>
             <tbody>
+                <?php if (!$complaints): ?>
+                    <tr><td colspan="4">No complaint records found.</td></tr>
+                <?php endif; ?>
                 <?php foreach ($complaints as $c): ?>
                     <tr>
                         <td>
