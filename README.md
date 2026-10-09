@@ -27,7 +27,7 @@ Without a working PostgreSQL connection, pages show an explicit disconnected sta
 
 For an existing database that already has its schema and seed rows, do not rerun `schema.sql` or `seed.sql`. Run only `database/booking_conflicts.sql` and `database/booking_history.sql` if those additions have not already been applied. The migration scripts are safe to rerun.
 
-The database design is documented in [`database/ER_DIAGRAM.md`](database/ER_DIAGRAM.md). It includes a Mermaid ER diagram and the relational schema used in the SQL files.
+The relational schema is implemented in [`database/schema.sql`](database/schema.sql).
 
 ## Connected workflows
 
@@ -43,11 +43,11 @@ Sign in with a seeded account. Role permissions are loaded from the authenticate
 
 The appearance toggle supports light and dark themes; the choice is saved in the browser. Dark mode uses graphite surfaces, muted blue accents, and adjusted semantic status colors.
 
-## Render Deployment
+## Future scope
 
-Docker is optional for local development: `start-server.bat` runs the PHP development server directly. The included `Dockerfile` is used when deploying the PHP application as a Docker Web Service, such as on Render. It installs Apache, PHP, `pdo_pgsql`, and `pgsql`; it does not run PostgreSQL itself. Create a separate Render PostgreSQL database and a Docker Web Service from this repository, then set the Web Service's `DATABASE_URL` to the database's **internal connection URL**. Apply the SQL files above to that hosted database using pgAdmin and its external connection URL. Do not point a public deployment at a developer's local database.
-
-The app prefers `DATABASE_URL` when set and falls back to `config/database.php` for local development. Set `APP_ENV=production` in Render so session cookies are marked Secure behind HTTPS. Keep all database URLs and credentials in Render's environment settings; never commit them. The assessment passwords are public demo credentials, so replace them before any real deployment.
+Containerized deployment and hosted database deployment can be added in a
+future phase. The current project is intended to run locally using PHP,
+PostgreSQL, and pgAdmin.
 
 ## DBMS concepts demonstrated
 
